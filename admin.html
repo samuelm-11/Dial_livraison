@@ -32,21 +32,68 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     
     <script type="module">
+
+// 1️⃣ Initialisation Supabase
          const supabase = window.supabase.createClient(
   window.APP_CONFIG.SUPABASE_URL,
   window.APP_CONFIG.SUPABASE_ANON_KEY
 );
 
+// 2 - Logout
       document.getElementById("logoutBtn").onclick = async () => {
         await supabase.auth.signOut();
         window.location.href = "./index.html";
       };
-
+// 3 - Creation de la carte 
       const map = L.map('map').setView([50.631, 5.571], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   attribution: '&copy; OpenStreetMap contributors'
 }).addTo(map);
+
+let markers = [];  /liste des makers
+
+function renderLocations(locations)  {       
+
+
+        //supprimer les markers
+  markers.forEach((m) => map.removeLayer(m));
+  markers = []; 
+
+
+      // ajouter les markers
+  locations.forEach((loc) => {
+    const marker = L.marker([loc.latitude,loc.longitude]).addTo(map);
+
+    marker.bindPopup(`
+<div style="font-weight:900;">${loc.name}</div>
+<div style="opacity:.7; font-size:12px;">$loc.type || ""} - $loc.site  || ""}</div>
+`);
+
+markers.push(marker ;
+  });
+// 3) Charge les locations depuis Supabase
+async function loadLocations() {
+  const { data, error } = await supabase
+    .from("locations")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(error);
+    alert("Erreur chargement locations: " + error.message);
+    return;
+  }
+
+  renderLocations(data || []);
+}
+
+// 4) Lancer le chargement au démarrage
+  loadLocations();
+  
+
+
+      
     </script>
   </body>
 </html>
