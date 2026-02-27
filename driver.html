@@ -21,11 +21,13 @@
       </div>
     </main>
 
+    <script src="./config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module">
-      const SUPABASE_URL = "https://uwvmemfghbhfrhjkroqp.supabase.co";
-      const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV3dm1lbWZnaGJoZnJoamtyb3FwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxNDQ1NTIsImV4cCI6MjA4NzcyMDU1Mn0.HxhxH6KhEoErp7oMbdkVXoB9iczFPRoxHlMCflo0Dpo";
-      const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      const supabase = window.supabase.createClient(
+        window.APP_CONFIG.SUPABASE_URL,
+        window.APP_CONFIG.SUPABASE_ANON_KEY
+        );
 
       document.getElementById("logoutBtn").onclick = async () => {
         await supabase.auth.signOut();
