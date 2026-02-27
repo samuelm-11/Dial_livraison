@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin</title>
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">Livraison</div>
+      <div class="muted">Admin</div>
+      <div style="flex:1"></div>
+      <button id="logoutBtn">Déconnexion</button>
+    </header>
+
+    <main class="container" style="max-width: 1000px;">
+      <div class="card">
+        <h2>Admin</h2>
+        <p class="muted">Prochaine étape : carte + ajout de lieux.</p>
+      </div>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script type="module">
+      const SUPABASE_URL = "COLLE_TON_URL";
+      const SUPABASE_ANON_KEY = "COLLE_TA_ANON_KEY";
+      const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+      document.getElementById("logoutBtn").onclick = async () => {
+        await supabase.auth.signOut();
+        window.location.href = "./index.html";
+      };
+    </script>
+  </body>
+</html>

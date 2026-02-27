@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Livraison – Login</title>
+
+    <!-- Leaflet (carte) via CDN -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
+
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+
+  <body>
+    <header class="topbar">
+      <div class="brand">Livraison</div>
+      <div class="muted">Login</div>
+    </header>
+
+    <main class="container">
+      <div class="card">
+        <h2>Connexion</h2>
+
+        <form id="loginForm" class="grid">
+          <label class="field">
+            <div class="label">Email</div>
+            <input id="email" type="email" placeholder="samuel@..." required />
+          </label>
+
+          <label class="field">
+            <div class="label">Mot de passe</div>
+            <input id="password" type="password" placeholder="••••••••" required />
+          </label>
+
+          <button id="btnLogin" type="submit">Se connecter</button>
+          <div id="err" class="err"></div>
+        </form>
+
+        <p class="muted small">
+          Après login : redirection auto vers <b>admin</b> ou <b>driver</b>.
+        </p>
+      </div>
+    </main>
+
+    <!-- Supabase via CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script type="module" src="./script.js"></script>
+  </body>
+</html>
