@@ -4,13 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin</title>
+
+    <!-- Leaflet CSS -->
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       crossorigin=""
     />
+
     <link rel="stylesheet" href="./styles.css" />
   </head>
+
   <body>
     <header class="topbar">
       <div class="brand">Livraison</div>
@@ -20,80 +24,156 @@
     </header>
 
     <main class="container" style="max-width: 1000px;">
-     <div class="card">
-      <h2>Admin</h2>
-      <div id="map" style="height: 500px;"></div>
-    </div>
+      <div class="card">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <h2 style="margin:0;">Admin</h2>
+          <div id="who" class="muted" style="font-size:12px;"></div>
+          <div style="flex:1"></div>
+          <button id="reloadBtn" class="smallbtn" type="button">↻ Recharger</button>
+        </div>
+
+        <div class="muted" style="font-size:12px; margin-top:8px;">
+          Les pins viennent de la table <b>locations</b>.
+        </div>
+
+        <div id="err" class="err" style="margin-top:10px;"></div>
+
+        <!-- Carte -->
+        <div id="map" style="height: 520px; margin-top: 12px; border-radius: 12px; overflow:hidden;"></div>
+      </div>
     </main>
 
-
+    <!-- Config (TES KEYS) -->
     <script src="./config.js"></script>
+
+    <!-- Supabase -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-    
+
     <script type="module">
+      // -----------------------------
+      // Helpers UI
+      // -----------------------------
+      const errBox = document.getElementById("err");
+      const whoBox = document.getElementById("who");
+      const reloadBtn = document.getElementById("reloadBtn");
 
-// 1️⃣ Initialisation Supabase
-         const supabase = window.supabase.createClient(
-  window.APP_CONFIG.SUPABASE_URL,
-  window.APP_CONFIG.SUPABASE_ANON_KEY
-);
+      function setErr(msg) {
+        errBox.textContent = msg || "";
+      }
 
-// 2 - Logout
+      // -----------------------------
+      // Init Supabase
+      // -----------------------------
+      const supabase = window.supabase.createClient(
+        window.APP_CONFIG.SUPABASE_URL,
+        window.APP_CONFIG.SUPABASE_ANON_KEY
+      );
+
+      // -----------------------------
+      // Auth guard (si pas connecté -> login)
+      // -----------------------------
+      const { data: auth } = await supabase.auth.getUser();
+      if (!auth?.user) {
+        window.location.href = "./index.html";
+      } else {
+        whoBox.textContent = auth.user.email ? `Connecté : ${auth.user.email}` : "";
+      }
+
+      // (Optionnel mais conseillé) : vérifier que c'est bien un admin
+      const { data: profile, error: profileErr } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("user_id", auth.user.id)
+        .single();
+
+      if (profileErr) {
+        setErr("Erreur profile: " + profileErr.message);
+      } else if (profile?.role !== "admin") {
+        // Si ce n'est pas un admin, on le renvoie côté driver
+        window.location.href = "./driver.html";
+      }
+
+      // -----------------------------
+      // Logout
+      // -----------------------------
       document.getElementById("logoutBtn").onclick = async () => {
         await supabase.auth.signOut();
         window.location.href = "./index.html";
       };
-// 3 - Creation de la carte 
-      const map = L.map('map').setView([50.631, 5.571], 12);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors'
-}).addTo(map);
+      // -----------------------------
+      // Leaflet map
+      // -----------------------------
+      const map = L.map("map").setView([50.631, 5.571], 12);
 
-let markers = [];  /liste des makers
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
 
-function renderLocations(locations)  {       
+      // -----------------------------
+      // Markers rendering
+      // -----------------------------
+      let markers = [];
 
+      function renderLocations(locations) {
+        // remove old markers
+        markers.forEach((m) => map.removeLayer(m));
+        markers = [];
 
-        //supprimer les markers
-  markers.forEach((m) => map.removeLayer(m));
-  markers = []; 
+        locations.forEach((loc) => {
+          // sécurité: lat/lon doivent exister
+          if (loc.latitude == null || loc.longitude == null) return;
 
+          const marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
 
-      // ajouter les markers
-  locations.forEach((loc) => {
-    const marker = L.marker([loc.latitude,loc.longitude]).addTo(map);
+          marker.bindPopup(`
+            <div style="font-weight:900;">${escapeHtml(loc.name || "")}</div>
+            <div style="opacity:.75; font-size:12px;">
+              ${(loc.type || "")} ${loc.site ? "— " + escapeHtml(loc.site) : ""}
+            </div>
+          `);
 
-    marker.bindPopup(`
-<div style="font-weight:900;">${loc.name}</div>
-<div style="opacity:.7; font-size:12px;">$loc.type || ""} - $loc.site  || ""}</div>
-`);
+          markers.push(marker);
+        });
+      }
 
-markers.push(marker ;
-  });
-// 3) Charge les locations depuis Supabase
-async function loadLocations() {
-  const { data, error } = await supabase
-    .from("locations")
-    .select("*")
-    .order("created_at", { ascending: false });
+      // petit helper anti html injection dans les popups
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
 
-  if (error) {
-    console.error(error);
-    alert("Erreur chargement locations: " + error.message);
-    return;
-  }
+      // -----------------------------
+      // Load locations from Supabase
+      // -----------------------------
+      async function loadLocations() {
+        setErr("");
 
-  renderLocations(data || []);
-}
+        const { data, error } = await supabase
+          .from("locations")
+          .select("*")
+          .order("created_at", { ascending: false });
 
-// 4) Lancer le chargement au démarrage
-  loadLocations();
-  
+        if (error) {
+          console.error(error);
+          setErr("Erreur chargement locations: " + error.message);
+          return;
+        }
 
+        renderLocations(data || []);
+      }
 
-      
+      reloadBtn.onclick = loadLocations;
+
+      // initial load
+      await loadLocations();
     </script>
   </body>
 </html>
