@@ -113,6 +113,36 @@
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(map);
 
+// --- Ajouter un lieu en cliquant sur la carte ---
+map.on("click", async (e) => {
+  // e.latlng = { lat, lng }
+  const name = prompt("Nom du lieu ? (ex: Machine sandwich Avia Partner)");
+  if (!name) return;
+
+  const type = prompt('Type ? (sandwich / snack / autre)', "sandwich") || "autre";
+  const site = prompt("Site ? (ex: Aéroport LGG / Avia / ...)", "") || null;
+  const notes = prompt("Notes ? (badge, accès, horaires...)", "") || null;
+
+  const payload = {
+    name: name.trim(),
+    type: type.trim(),
+    site,
+    notes,
+    latitude: e.latlng.lat,
+    longitude: e.latlng.lng,
+  };
+
+  const { error } = await supabase.from("locations").insert(payload);
+  if (error) {
+    alert("Erreur insert: " + error.message);
+    return;
+  }
+
+  // rafraîchir pins
+  await loadLocations();
+  alert("Lieu ajouté ✅");
+});
+      
       // -----------------------------
       // Markers rendering
       // -----------------------------
