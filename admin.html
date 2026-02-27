@@ -114,8 +114,10 @@
       }).addTo(map);
 
 // --- Ajouter un lieu en cliquant sur la carte ---
-map.on("click", async (e) => {
-  // e.latlng = { lat, lng }
+      map.on("click", async (e) => {
+  // évite de créer un lieu quand on clique un marker
+  if (e.originalEvent?.target?.closest?.(".leaflet-marker-icon")) return;
+
   const name = prompt("Nom du lieu ? (ex: Machine sandwich Avia Partner)");
   if (!name) return;
 
@@ -138,10 +140,10 @@ map.on("click", async (e) => {
     return;
   }
 
-  // rafraîchir pins
   await loadLocations();
   alert("Lieu ajouté ✅");
 });
+
       
       // -----------------------------
       // Markers rendering
