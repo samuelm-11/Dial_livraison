@@ -11,7 +11,6 @@
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       crossorigin=""
     />
-
     <link rel="stylesheet" href="./styles.css" />
   </head>
 
@@ -43,7 +42,44 @@
       </div>
     </main>
 
-    <!-- Config (TES KEYS) -->
+    <!-- ✅ 1) LE DIALOG = HTML (donc ici, dans le body, hors script) -->
+    <dialog id="addDialog">
+      <form id="addForm" class="grid" style="margin:0;">
+        <h3 style="margin:0 0 6px 0;">Nouveau lieu</h3>
+        <div class="muted" style="font-size:12px;">Coordonnées : <span id="coordsText">—</span></div>
+
+        <label class="field">
+          <div class="label">Nom</div>
+          <input id="fName" required placeholder="Ex: Machine sandwich Avia Partner" />
+        </label>
+
+        <label class="field">
+          <div class="label">Type</div>
+          <select id="fType">
+            <option value="sandwich">sandwich</option>
+            <option value="snack">snack</option>
+            <option value="autre">autre</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <div class="label">Site</div>
+          <input id="fSite" placeholder="Ex: Aéroport LGG / Avia" />
+        </label>
+
+        <label class="field">
+          <div class="label">Notes</div>
+          <textarea id="fNotes" placeholder="Badge, accès, horaires…"></textarea>
+        </label>
+
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:8px;">
+          <button id="cancelBtn" type="button" class="smallbtn">Annuler</button>
+          <button type="submit" class="smallbtn">Enregistrer</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Config -->
     <script src="./config.js"></script>
 
     <!-- Supabase -->
@@ -73,7 +109,7 @@
       );
 
       // -----------------------------
-      // Auth guard (si pas connecté -> login)
+      // Auth guard
       // -----------------------------
       const { data: auth } = await supabase.auth.getUser();
       if (!auth?.user) {
@@ -82,7 +118,6 @@
         whoBox.textContent = auth.user.email ? `Connecté : ${auth.user.email}` : "";
       }
 
-      // (Optionnel mais conseillé) : vérifier que c'est bien un admin
       const { data: profile, error: profileErr } = await supabase
         .from("profiles")
         .select("role")
@@ -92,7 +127,6 @@
       if (profileErr) {
         setErr("Erreur profile: " + profileErr.message);
       } else if (profile?.role !== "admin") {
-        // Si ce n'est pas un admin, on le renvoie côté driver
         window.location.href = "./driver.html";
       }
 
@@ -113,66 +147,11 @@
         attribution: "&copy; OpenStreetMap contributors",
       }).addTo(map);
 
-// --- Ajouter un lieu en cliquant sur la carte ---
-      map.on("click", async (e) => {
-  // évite de créer un lieu quand on clique un marker
-  if (e.originalEvent?.target?.closest?.(".leaflet-marker-icon")) return;
-
-  const name = prompt("Nom du lieu ? (ex: Machine sandwich Avia Partner)");
-  if (!name) return;
-
-  const type = prompt('Type ? (sandwich / snack / autre)', "sandwich") || "autre";
-  const site = prompt("Site ? (ex: Aéroport LGG / Avia / ...)", "") || null;
-  const notes = prompt("Notes ? (badge, accès, horaires...)", "") || null;
-
-  const payload = {
-    name: name.trim(),
-    type: type.trim(),
-    site,
-    notes,
-    latitude: e.latlng.lat,
-    longitude: e.latlng.lng,
-  };
-
-  const { error } = await supabase.from("locations").insert(payload);
-  if (error) {
-    alert("Erreur insert: " + error.message);
-    return;
-  }
-
-  await loadLocations();
-  alert("Lieu ajouté ✅");
-});
-
-      
       // -----------------------------
       // Markers rendering
       // -----------------------------
       let markers = [];
 
-      function renderLocations(locations) {
-        // remove old markers
-        markers.forEach((m) => map.removeLayer(m));
-        markers = [];
-
-        locations.forEach((loc) => {
-          // sécurité: lat/lon doivent exister
-          if (loc.latitude == null || loc.longitude == null) return;
-
-          const marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
-
-          marker.bindPopup(`
-            <div style="font-weight:900;">${escapeHtml(loc.name || "")}</div>
-            <div style="opacity:.75; font-size:12px;">
-              ${(loc.type || "")} ${loc.site ? "— " + escapeHtml(loc.site) : ""}
-            </div>
-          `);
-
-          markers.push(marker);
-        });
-      }
-
-      // petit helper anti html injection dans les popups
       function escapeHtml(str) {
         return String(str)
           .replaceAll("&", "&amp;")
@@ -182,12 +161,30 @@
           .replaceAll("'", "&#039;");
       }
 
+      function renderLocations(locations) {
+        markers.forEach((m) => map.removeLayer(m));
+        markers = [];
+
+        locations.forEach((loc) => {
+          if (loc.latitude == null || loc.longitude == null) return;
+
+          const marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
+          marker.bindPopup(`
+            <div style="font-weight:900;">${escapeHtml(loc.name || "")}</div>
+            <div style="opacity:.75; font-size:12px;">
+              ${escapeHtml(loc.type || "")} ${loc.site ? "— " + escapeHtml(loc.site) : ""}
+            </div>
+          `);
+
+          markers.push(marker);
+        });
+      }
+
       // -----------------------------
-      // Load locations from Supabase
+      // Load locations
       // -----------------------------
       async function loadLocations() {
         setErr("");
-
         const { data, error } = await supabase
           .from("locations")
           .select("*")
@@ -203,6 +200,64 @@
       }
 
       reloadBtn.onclick = loadLocations;
+
+      // -----------------------------
+      // ✅ Ajout via Dialog (pas de prompt)
+      // -----------------------------
+      const addDialog = document.getElementById("addDialog");
+      const addForm = document.getElementById("addForm");
+      const cancelBtn = document.getElementById("cancelBtn");
+
+      const fName = document.getElementById("fName");
+      const fType = document.getElementById("fType");
+      const fSite = document.getElementById("fSite");
+      const fNotes = document.getElementById("fNotes");
+      const coordsText = document.getElementById("coordsText");
+
+      let pendingLatLng = null;
+
+      cancelBtn.onclick = () => addDialog.close();
+
+      map.on("click", (e) => {
+        // évite d’ouvrir quand on clique un marker
+        if (e.originalEvent?.target?.closest?.(".leaflet-marker-icon")) return;
+
+        pendingLatLng = e.latlng;
+        coordsText.textContent = `${pendingLatLng.lat.toFixed(6)}, ${pendingLatLng.lng.toFixed(6)}`;
+
+        // reset champs
+        fName.value = "";
+        fType.value = "sandwich";
+        fSite.value = "";
+        fNotes.value = "";
+
+        addDialog.showModal();
+        fName.focus();
+      });
+
+      addForm.addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        if (!pendingLatLng) return;
+
+        const payload = {
+          name: fName.value.trim(),
+          type: fType.value,
+          site: fSite.value.trim() || null,
+          notes: fNotes.value.trim() || null,
+          latitude: pendingLatLng.lat,
+          longitude: pendingLatLng.lng,
+        };
+
+        const { error } = await supabase.from("locations").insert(payload);
+        if (error) {
+          alert("Erreur insert: " + error.message);
+          return;
+        }
+
+        addDialog.close();
+        pendingLatLng = null;
+        await loadLocations();
+      });
 
       // initial load
       await loadLocations();
