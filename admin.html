@@ -22,25 +22,74 @@
       <button id="logoutBtn">Déconnexion</button>
     </header>
 
-    <main class="container" style="max-width: 1000px;">
-      <div class="card">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <h2 style="margin:0;">Admin</h2>
-          <div id="who" class="muted" style="font-size:12px;"></div>
-          <div style="flex:1"></div>
-          <button id="reloadBtn" class="smallbtn" type="button">↻ Recharger</button>
-        </div>
-
-        <div class="muted" style="font-size:12px; margin-top:8px;">
-          Les pins viennent de la table <b>locations</b>.
-        </div>
-
-        <div id="err" class="err" style="margin-top:10px;"></div>
-
-        <!-- Carte -->
-        <div id="map" style="height: 520px; margin-top: 12px; border-radius: 12px; overflow:hidden;"></div>
+  <main class="container" style="max-width: 1200px;">
+  <div class="admin-layout">
+    <div class="card">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <h2 style="margin:0;">Admin</h2>
+        <div id="who" class="muted" style="font-size:12px;"></div>
+        <div style="flex:1"></div>
+        <button id="reloadBtn" class="smallbtn" type="button">↻ Recharger</button>
       </div>
-    </main>
+
+      <div class="muted" style="font-size:12px; margin-top:8px;">
+        Pins = lieux (locations). Détails = machines.
+      </div>
+
+      <div id="err" class="err" style="margin-top:10px;"></div>
+
+      <div id="map" style="height: 72vh; margin-top: 12px; border-radius: 12px; overflow:hidden;"></div>
+    </div>
+
+    <aside class="card" style="height: calc(72vh + 64px); overflow:auto;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <strong>Lieux & machines</strong>
+        <div style="flex:1"></div>
+        <span id="countBox" class="muted" style="font-size:12px;"></span>
+      </div>
+
+      <div class="spacer"></div>
+
+      <!-- Filtres -->
+      <div class="grid" style="grid-template-columns: 1fr 1fr; gap:10px;">
+        <label class="field">
+          <div class="label">Type machine</div>
+          <select id="filterKind">
+            <option value="">Tous</option>
+            <option value="sandwich">sandwich</option>
+            <option value="snack">snack</option>
+            <option value="boisson">boisson</option>
+            <option value="cafe">cafe</option>
+            <option value="autre">autre</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <div class="label">Statut</div>
+          <select id="filterStatus">
+            <option value="">Tous</option>
+            <option value="ok">ok</option>
+            <option value="panne">panne</option>
+            <option value="vide">vide</option>
+            <option value="a_verifier">a_verifier</option>
+          </select>
+        </label>
+
+        <label class="field" style="grid-column: 1 / -1;">
+          <div class="label">Recherche lieu</div>
+          <input id="filterText" placeholder="Avia, LGG, bâtiment 44…" />
+        </label>
+      </div>
+
+      <div class="spacer"></div>
+
+      <!-- Liste -->
+      <div id="listBox"></div>
+    </aside>
+  </div>
+</main>
+
+
 
     <!-- ✅ 1) LE DIALOG = HTML (donc ici, dans le body, hors script) -->
     <dialog id="addDialog">
@@ -152,6 +201,9 @@
       // -----------------------------
       let markers = [];
 
+      let pendingLatLng = null;
+      let editingLocationId = null;
+      
       function escapeHtml(str) {
         return String(str)
           .replaceAll("&", "&amp;")
@@ -169,12 +221,16 @@
           if (loc.latitude == null || loc.longitude == null) return;
 
           const marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
-          marker.bindPopup(`
-            <div style="font-weight:900;">${escapeHtml(loc.name || "")}</div>
-            <div style="opacity:.75; font-size:12px;">
-              ${escapeHtml(loc.type || "")} ${loc.site ? "— " + escapeHtml(loc.site) : ""}
-            </div>
-          `);
+marker.bindPopup(`
+  <div style="font-weight:900;">${escapeHtml(loc.name || "")}</div>
+  <div style="opacity:.75; font-size:12px; margin-bottom:8px;">
+    ${escapeHtml(loc.type || "")} ${loc.site ? "— " + escapeHtml(loc.site) : ""}
+  </div>
+  <div style="display:flex; gap:8px;">
+    <button onclick="window.editLocation('${loc.id}')">Modifier</button>
+    <button onclick="window.deleteLocation('${loc.id}')" style="color:#ff6b6b;">Supprimer</button>
+  </div>
+`);
 
           markers.push(marker);
         });
@@ -201,6 +257,36 @@
 
       reloadBtn.onclick = loadLocations;
 
+
+window.editLocation = async (id) => {
+  setErr("");
+  const { data, error } = await supabase.from("locations").select("*").eq("id", id).single();
+  if (error) return alert("Erreur chargement: " + error.message);
+
+  editingLocationId = id;
+  pendingLatLng = { lat: data.latitude, lng: data.longitude };
+  coordsText.textContent = `${pendingLatLng.lat.toFixed(6)}, ${pendingLatLng.lng.toFixed(6)}`;
+
+  fName.value = data.name || "";
+  fType.value = data.type || "sandwich";
+  fSite.value = data.site || "";
+  fNotes.value = data.notes || "";
+
+  addDialog.showModal();
+  fName.focus();
+};
+
+window.deleteLocation = async (id) => {
+  if (!confirm("Supprimer ce lieu ?")) return;
+
+  const { error } = await supabase.from("locations").delete().eq("id", id);
+  if (error) return alert("Erreur suppression: " + error.message);
+
+  await loadLocations();
+};
+
+
+      
       // -----------------------------
       // ✅ Ajout via Dialog (pas de prompt)
       // -----------------------------
@@ -214,8 +300,8 @@
       const fNotes = document.getElementById("fNotes");
       const coordsText = document.getElementById("coordsText");
 
-      let pendingLatLng = null;
 
+      
       cancelBtn.onclick = () => addDialog.close();
 
       map.on("click", (e) => {
@@ -248,15 +334,22 @@
           longitude: pendingLatLng.lng,
         };
 
-        const { error } = await supabase.from("locations").insert(payload);
-        if (error) {
-          alert("Erreur insert: " + error.message);
-          return;
-        }
+let res;
+if (editingLocationId) {
+  res = await supabase.from("locations").update(payload).eq("id", editingLocationId);
+} else {
+  res = await supabase.from("locations").insert(payload);
+}
 
-        addDialog.close();
-        pendingLatLng = null;
-        await loadLocations();
+if (res.error) {
+  alert("Erreur: " + res.error.message);
+  return;
+}
+
+addDialog.close();
+pendingLatLng = null;
+editingLocationId = null;
+await loadLocations();
       });
 
       // initial load
