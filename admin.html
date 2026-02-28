@@ -138,222 +138,392 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 
     <script type="module">
-      // -----------------------------
-      // Helpers UI
-      // -----------------------------
-      const errBox = document.getElementById("err");
-      const whoBox = document.getElementById("who");
-      const reloadBtn = document.getElementById("reloadBtn");
+  // -----------------------------
+  // Helpers UI
+  // -----------------------------
+  const errBox = document.getElementById("err");
+  const whoBox = document.getElementById("who");
+  const reloadBtn = document.getElementById("reloadBtn");
 
-      function setErr(msg) {
-        errBox.textContent = msg || "";
-      }
+  const listBox = document.getElementById("listBox");
+  const countBox = document.getElementById("countBox");
+  const filterKind = document.getElementById("filterKind");
+  const filterStatus = document.getElementById("filterStatus");
+  const filterText = document.getElementById("filterText");
 
-      // -----------------------------
-      // Init Supabase
-      // -----------------------------
-      const supabase = window.supabase.createClient(
-        window.APP_CONFIG.SUPABASE_URL,
-        window.APP_CONFIG.SUPABASE_ANON_KEY
-      );
+  function setErr(msg) {
+    errBox.textContent = msg || "";
+  }
 
-      // -----------------------------
-      // Auth guard
-      // -----------------------------
-      const { data: auth } = await supabase.auth.getUser();
-      if (!auth?.user) {
-        window.location.href = "./index.html";
-      } else {
-        whoBox.textContent = auth.user.email ? `Connecté : ${auth.user.email}` : "";
-      }
+  function escapeHtml(str) {
+    return String(str ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
 
-      const { data: profile, error: profileErr } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("user_id", auth.user.id)
-        .single();
+  // -----------------------------
+  // Init Supabase
+  // -----------------------------
+  const supabase = window.supabase.createClient(
+    window.APP_CONFIG.SUPABASE_URL,
+    window.APP_CONFIG.SUPABASE_ANON_KEY
+  );
 
-      if (profileErr) {
-        setErr("Erreur profile: " + profileErr.message);
-      } else if (profile?.role !== "admin") {
-        window.location.href = "./driver.html";
-      }
+  // -----------------------------
+  // Auth guard
+  // -----------------------------
+  const { data: auth } = await supabase.auth.getUser();
+  if (!auth?.user) {
+    window.location.href = "./index.html";
+  } else {
+    whoBox.textContent = auth.user.email ? `Connecté : ${auth.user.email}` : "";
+  }
 
-      // -----------------------------
-      // Logout
-      // -----------------------------
-      document.getElementById("logoutBtn").onclick = async () => {
-        await supabase.auth.signOut();
-        window.location.href = "./index.html";
-      };
+  const { data: profile, error: profileErr } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("user_id", auth.user.id)
+    .single();
 
-      // -----------------------------
-      // Leaflet map
-      // -----------------------------
-      const map = L.map("map").setView([50.631, 5.571], 12);
+  if (profileErr) {
+    setErr("Erreur profile: " + profileErr.message);
+  } else if (profile?.role !== "admin") {
+    window.location.href = "./driver.html";
+  }
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: "&copy; OpenStreetMap contributors",
-      }).addTo(map);
+  // -----------------------------
+  // Logout
+  // -----------------------------
+  document.getElementById("logoutBtn").onclick = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "./index.html";
+  };
 
-      // -----------------------------
-      // Markers rendering
-      // -----------------------------
-      let markers = [];
+  // -----------------------------
+  // Leaflet map
+  // -----------------------------
+  const map = L.map("map").setView([50.631, 5.571], 12);
 
-      let pendingLatLng = null;
-      let editingLocationId = null;
-      
-      function escapeHtml(str) {
-        return String(str)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;")
-          .replaceAll('"', "&quot;")
-          .replaceAll("'", "&#039;");
-      }
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(map);
 
-      function renderLocations(locations) {
-        markers.forEach((m) => map.removeLayer(m));
-        markers = [];
+  // -----------------------------
+  // State
+  // -----------------------------
+  let markers = [];
+  let allLocations = [];
+  let allMachines = [];
+  let markerByLocationId = new Map();
 
-        locations.forEach((loc) => {
-          if (loc.latitude == null || loc.longitude == null) return;
+  // dialog state
+  let pendingLatLng = null;
+  let editingLocationId = null;
 
-          const marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
-marker.bindPopup(`
-  <div style="font-weight:900;">${escapeHtml(loc.name || "")}</div>
-  <div style="opacity:.75; font-size:12px; margin-bottom:8px;">
-    ${escapeHtml(loc.type || "")} ${loc.site ? "— " + escapeHtml(loc.site) : ""}
-  </div>
-  <div style="display:flex; gap:8px;">
-    <button onclick="window.editLocation('${loc.id}')">Modifier</button>
-    <button onclick="window.deleteLocation('${loc.id}')" style="color:#ff6b6b;">Supprimer</button>
-  </div>
-`);
+  // -----------------------------
+  // Dialog elements
+  // -----------------------------
+  const addDialog = document.getElementById("addDialog");
+  const addForm = document.getElementById("addForm");
+  const cancelBtn = document.getElementById("cancelBtn");
 
-          markers.push(marker);
-        });
-      }
+  const fName = document.getElementById("fName");
+  const fType = document.getElementById("fType");
+  const fSite = document.getElementById("fSite");
+  const fNotes = document.getElementById("fNotes");
+  const coordsText = document.getElementById("coordsText");
 
-      // -----------------------------
-      // Load locations
-      // -----------------------------
-      async function loadLocations() {
-        setErr("");
-        const { data, error } = await supabase
-          .from("locations")
-          .select("*")
-          .order("created_at", { ascending: false });
+  cancelBtn.onclick = () => addDialog.close();
 
-        if (error) {
-          console.error(error);
-          setErr("Erreur chargement locations: " + error.message);
-          return;
+  // -----------------------------
+  // Render markers
+  // -----------------------------
+  function renderLocations(locations) {
+    // clear markers
+    markers.forEach((m) => map.removeLayer(m));
+    markers = [];
+    markerByLocationId.clear();
+
+    locations.forEach((loc) => {
+      if (loc.latitude == null || loc.longitude == null) return;
+
+      const marker = L.marker([loc.latitude, loc.longitude]).addTo(map);
+
+      marker.bindPopup(`
+        <div style="font-weight:900;">${escapeHtml(loc.name)}</div>
+        <div style="opacity:.75; font-size:12px; margin-bottom:8px;">
+          ${escapeHtml(loc.type)} ${loc.site ? "— " + escapeHtml(loc.site) : ""}
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="window.editLocation('${loc.id}')">Modifier</button>
+          <button onclick="window.deleteLocation('${loc.id}')" style="color:#ff6b6b;">Supprimer</button>
+        </div>
+      `);
+
+      markers.push(marker);
+      markerByLocationId.set(loc.id, marker);
+    });
+  }
+
+  // -----------------------------
+  // Load data
+  // -----------------------------
+  async function loadLocations() {
+    setErr("");
+
+    const { data, error } = await supabase
+      .from("locations")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      setErr("Erreur chargement locations: " + error.message);
+      return;
+    }
+
+    allLocations = data || [];
+    renderLocations(allLocations);
+  }
+
+  async function loadMachines() {
+    const { data, error } = await supabase
+      .from("machines")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      setErr("Erreur chargement machines: " + error.message);
+      return;
+    }
+
+    allMachines = data || [];
+  }
+
+  // -----------------------------
+  // List / Filters
+  // -----------------------------
+  function buildMachinesByLoc(machines) {
+    const map = new Map();
+    for (const m of machines) {
+      if (!map.has(m.location_id)) map.set(m.location_id, []);
+      map.get(m.location_id).push(m);
+    }
+    return map;
+  }
+
+  function applyFilters() {
+    const k = (filterKind.value || "").trim();
+    const s = (filterStatus.value || "").trim();
+    const q = (filterText.value || "").toLowerCase().trim();
+
+    const filteredMachines = allMachines.filter((m) => {
+      if (k && m.kind !== k) return false;
+      if (s && m.status !== s) return false;
+      return true;
+    });
+
+    const machinesByLoc = buildMachinesByLoc(filteredMachines);
+    const hasMachineFilter = !!k || !!s;
+
+    const filteredLocations = allLocations.filter((loc) => {
+      const textOk =
+        !q ||
+        (loc.name || "").toLowerCase().includes(q) ||
+        (loc.site || "").toLowerCase().includes(q);
+
+      if (!textOk) return false;
+
+      if (!hasMachineFilter) return true;
+      return (machinesByLoc.get(loc.id) || []).length > 0;
+    });
+
+    renderList(filteredLocations, machinesByLoc, hasMachineFilter);
+  }
+
+  function renderList(locations, machinesByLoc, hasMachineFilter) {
+    listBox.innerHTML = "";
+
+    let totalMachinesShown = 0;
+
+    for (const loc of locations) {
+      const ms = hasMachineFilter
+        ? machinesByLoc.get(loc.id) || []
+        : allMachines.filter((m) => m.location_id === loc.id);
+
+      totalMachinesShown += ms.length;
+
+      const el = document.createElement("div");
+      el.className = "locCard";
+
+      el.innerHTML = `
+        <div class="locTitle">
+          <div>
+            <button class="btnLink" data-loc="${loc.id}">
+              <strong>${escapeHtml(loc.name || "Sans nom")}</strong>
+            </button>
+            <div class="muted" style="font-size:12px;">
+              ${escapeHtml(loc.site || "")}
+            </div>
+          </div>
+          <span class="badge">${ms.length} machine(s)</span>
+        </div>
+        <div class="machinesBox"></div>
+      `;
+
+      el.querySelector("[data-loc]").addEventListener("click", () => {
+        if (loc.latitude != null && loc.longitude != null) {
+          map.setView([loc.latitude, loc.longitude], 15);
         }
+        const marker = markerByLocationId.get(loc.id);
+        if (marker) marker.openPopup();
+      });
 
-        renderLocations(data || []);
+      const box = el.querySelector(".machinesBox");
+
+      if (!ms.length) {
+        const empty = document.createElement("div");
+        empty.className = "muted";
+        empty.style.fontSize = "12px";
+        empty.style.marginTop = "8px";
+        empty.textContent = "Aucune machine";
+        box.appendChild(empty);
+      } else {
+        for (const m of ms) {
+          const row = document.createElement("div");
+          row.className = "machineRow";
+          row.innerHTML = `
+            <div>
+              <div><strong>${escapeHtml(m.label || "")}</strong></div>
+              <div class="muted" style="font-size:12px;">
+                ${escapeHtml(m.kind)} • ${escapeHtml(m.status)}
+              </div>
+            </div>
+            <div class="muted" style="font-size:12px;">
+              ${m.notes ? escapeHtml(m.notes) : ""}
+            </div>
+          `;
+          box.appendChild(row);
+        }
       }
 
-      reloadBtn.onclick = loadLocations;
+      listBox.appendChild(el);
+    }
 
+    countBox.textContent = `${locations.length} lieu(x) • ${totalMachinesShown} machine(s)`;
+  }
 
-window.editLocation = async (id) => {
-  setErr("");
-  const { data, error } = await supabase.from("locations").select("*").eq("id", id).single();
-  if (error) return alert("Erreur chargement: " + error.message);
+  filterKind.onchange = applyFilters;
+  filterStatus.onchange = applyFilters;
+  filterText.oninput = applyFilters;
 
-  editingLocationId = id;
-  pendingLatLng = { lat: data.latitude, lng: data.longitude };
-  coordsText.textContent = `${pendingLatLng.lat.toFixed(6)}, ${pendingLatLng.lng.toFixed(6)}`;
+  // -----------------------------
+  // Click map -> open dialog (create)
+  // -----------------------------
+  map.on("click", (e) => {
+    if (e.originalEvent?.target?.closest?.(".leaflet-marker-icon")) return;
 
-  fName.value = data.name || "";
-  fType.value = data.type || "sandwich";
-  fSite.value = data.site || "";
-  fNotes.value = data.notes || "";
+    editingLocationId = null;
+    pendingLatLng = e.latlng;
 
-  addDialog.showModal();
-  fName.focus();
-};
+    coordsText.textContent = `${pendingLatLng.lat.toFixed(6)}, ${pendingLatLng.lng.toFixed(6)}`;
 
-window.deleteLocation = async (id) => {
-  if (!confirm("Supprimer ce lieu ?")) return;
+    fName.value = "";
+    fType.value = "sandwich";
+    fSite.value = "";
+    fNotes.value = "";
 
-  const { error } = await supabase.from("locations").delete().eq("id", id);
-  if (error) return alert("Erreur suppression: " + error.message);
+    addDialog.showModal();
+    fName.focus();
+  });
 
-  await loadLocations();
-};
+  // submit dialog
+  addForm.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    if (!pendingLatLng) return;
 
+    const payload = {
+      name: fName.value.trim(),
+      type: fType.value,
+      site: fSite.value.trim() || null,
+      notes: fNotes.value.trim() || null,
+      latitude: pendingLatLng.lat,
+      longitude: pendingLatLng.lng,
+    };
 
-      
-      // -----------------------------
-      // ✅ Ajout via Dialog (pas de prompt)
-      // -----------------------------
-      const addDialog = document.getElementById("addDialog");
-      const addForm = document.getElementById("addForm");
-      const cancelBtn = document.getElementById("cancelBtn");
+    let res;
+    if (editingLocationId) {
+      res = await supabase.from("locations").update(payload).eq("id", editingLocationId);
+    } else {
+      res = await supabase.from("locations").insert(payload);
+    }
 
-      const fName = document.getElementById("fName");
-      const fType = document.getElementById("fType");
-      const fSite = document.getElementById("fSite");
-      const fNotes = document.getElementById("fNotes");
-      const coordsText = document.getElementById("coordsText");
+    if (res.error) {
+      alert("Erreur: " + res.error.message);
+      return;
+    }
 
+    addDialog.close();
+    pendingLatLng = null;
+    editingLocationId = null;
 
-      
-      cancelBtn.onclick = () => addDialog.close();
+    await refreshAll();
+  });
 
-      map.on("click", (e) => {
-        // évite d’ouvrir quand on clique un marker
-        if (e.originalEvent?.target?.closest?.(".leaflet-marker-icon")) return;
+  // -----------------------------
+  // Edit / Delete exposed to popup buttons
+  // -----------------------------
+  window.editLocation = async (id) => {
+    setErr("");
 
-        pendingLatLng = e.latlng;
-        coordsText.textContent = `${pendingLatLng.lat.toFixed(6)}, ${pendingLatLng.lng.toFixed(6)}`;
+    const { data, error } = await supabase
+      .from("locations")
+      .select("*")
+      .eq("id", id)
+      .single();
 
-        // reset champs
-        fName.value = "";
-        fType.value = "sandwich";
-        fSite.value = "";
-        fNotes.value = "";
+    if (error) return alert("Erreur chargement: " + error.message);
 
-        addDialog.showModal();
-        fName.focus();
-      });
+    editingLocationId = id;
+    pendingLatLng = { lat: data.latitude, lng: data.longitude };
 
-      addForm.addEventListener("submit", async (ev) => {
-        ev.preventDefault();
-        if (!pendingLatLng) return;
+    coordsText.textContent = `${pendingLatLng.lat.toFixed(6)}, ${pendingLatLng.lng.toFixed(6)}`;
 
-        const payload = {
-          name: fName.value.trim(),
-          type: fType.value,
-          site: fSite.value.trim() || null,
-          notes: fNotes.value.trim() || null,
-          latitude: pendingLatLng.lat,
-          longitude: pendingLatLng.lng,
-        };
+    fName.value = data.name || "";
+    fType.value = data.type || "sandwich";
+    fSite.value = data.site || "";
+    fNotes.value = data.notes || "";
 
-let res;
-if (editingLocationId) {
-  res = await supabase.from("locations").update(payload).eq("id", editingLocationId);
-} else {
-  res = await supabase.from("locations").insert(payload);
-}
+    addDialog.showModal();
+    fName.focus();
+  };
 
-if (res.error) {
-  alert("Erreur: " + res.error.message);
-  return;
-}
+  window.deleteLocation = async (id) => {
+    if (!confirm("Supprimer ce lieu ?")) return;
 
-addDialog.close();
-pendingLatLng = null;
-editingLocationId = null;
-await loadLocations();
-      });
+    const { error } = await supabase.from("locations").delete().eq("id", id);
+    if (error) return alert("Erreur suppression: " + error.message);
 
-      // initial load
-      await loadLocations();
-    </script>
+    await refreshAll();
+  };
+
+  // -----------------------------
+  // Refresh all
+  // -----------------------------
+  async function refreshAll() {
+    await loadLocations();
+    await loadMachines();
+    applyFilters();
+  }
+
+  reloadBtn.onclick = refreshAll;
+
+  // initial load
+  await refreshAll();
+</script>
   </body>
 </html>
